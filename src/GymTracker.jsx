@@ -71,6 +71,7 @@ const allExOf = (id) => [...R[id].ex, ...R[id].mini];
 const LS = typeof window !== "undefined" && window.localStorage ? window.localStorage : null;
 const UID_KEY = "gym-uid";
 const KEY_TO_FIELD = { "gym-h": "history", "gym-a": "active" };
+const BACKUP_LATEST_KEY = "gym-backup-latest";
 const REMOTE_ENABLED = import.meta.env.VITE_REMOTE_SYNC === "1";
 
 function getUid() {
@@ -193,6 +194,30 @@ async function dbSave(k, v) {
   // Sync write first to survive app close/tab kill.
   localSave(k, v);
   queueRemoteSave(k, v);
+}
+
+function makeBackupPayload(history, active) {
+  return {
+    app: "GymTracker",
+    version: 1,
+    createdAt: new Date().toISOString(),
+    data: { history, active },
+  };
+}
+
+function downloadBackupFile(payload) {
+  if (typeof document === "undefined") return;
+  const ts = new Date(payload?.createdAt || Date.now());
+  const stamp = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, "0")}${String(ts.getDate()).padStart(2, "0")}-${String(ts.getHours()).padStart(2, "0")}${String(ts.getMinutes()).padStart(2, "0")}${String(ts.getSeconds()).padStart(2, "0")}`;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `gymtracker-backup-${stamp}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /* ═══════════════════════════════════════════
@@ -337,6 +362,7 @@ export default function GymTracker() {
   const tRef = useRef(null);
   const startRef = useRef(null);
   const readyRef = useRef(false);
+  const backupFileRef = useRef(null);
   const [calM, setCalM] = useState(new Date().getMonth());
   const [calY, setCalY] = useState(new Date().getFullYear());
   const [detW, setDetW] = useState(null);
@@ -344,15 +370,21 @@ export default function GymTracker() {
   // Load on mount
   useEffect(() => {
     Promise.all([dbLoad("gym-h", []), dbLoad("gym-a", null)]).then(([h, a]) => {
-      if (h?.length) setHist(h);
-      if (a?.rid && R[a.rid]) {
-        dataRef.current = a.data || {};
-        doneRef.current = a.done || {};
-        setRid(a.rid);
-        setEidx(a.eidx || 0);
-        startRef.current = a.st || Date.now();
+      const backup = localLoad(BACKUP_LATEST_KEY, null);
+      const bh = Array.isArray(backup?.data?.history) ? backup.data.history : [];
+      const ba = backup?.data?.active;
+      const effectiveHist = h?.length ? h : bh;
+      const effectiveActive = a?.rid ? a : (ba?.rid ? ba : null);
+
+      if (effectiveHist?.length) setHist(effectiveHist);
+      if (effectiveActive?.rid && R[effectiveActive.rid]) {
+        dataRef.current = effectiveActive.data || {};
+        doneRef.current = effectiveActive.done || {};
+        setRid(effectiveActive.rid);
+        setEidx(effectiveActive.eidx || 0);
+        startRef.current = effectiveActive.st || Date.now();
         // Restore exact screen
-        setView(a.view === "workout" ? "workout" : "routine");
+        setView(effectiveActive.view === "workout" ? "workout" : "routine");
       }
       readyRef.current = true;
     }).catch(() => { readyRef.current = true; });
@@ -363,16 +395,88 @@ export default function GymTracker() {
 
   // Save active — includes current screen and exercise index
   const saveActive = useCallback((overrideView, overrideEidx) => {
-    if (!rid) { dbSave("gym-a", null); return; }
-    dbSave("gym-a", {
+    if (!rid) {
+      dbSave("gym-a", null);
+      localSave(BACKUP_LATEST_KEY, makeBackupPayload(hist, null));
+      return;
+    }
+    const active = {
       rid,
       data: dataRef.current,
       done: doneRef.current,
       st: startRef.current,
       eidx: overrideEidx !== undefined ? overrideEidx : eidx,
       view: overrideView || view,
-    });
+    };
+    dbSave("gym-a", active);
+    localSave(BACKUP_LATEST_KEY, makeBackupPayload(hist, active));
+  }, [rid, eidx, view, hist]);
+
+  const getActiveSnapshot = useCallback((override) => {
+    if (override !== undefined) return override;
+    if (!rid) return null;
+    return {
+      rid,
+      data: dataRef.current,
+      done: doneRef.current,
+      st: startRef.current,
+      eidx,
+      view,
+    };
   }, [rid, eidx, view]);
+
+  const createBackup = useCallback((historyOverride, activeOverride) => {
+    const payload = makeBackupPayload(historyOverride ?? hist, getActiveSnapshot(activeOverride));
+    localSave(BACKUP_LATEST_KEY, payload);
+    return payload;
+  }, [hist, getActiveSnapshot]);
+
+  const exportBackup = useCallback(() => {
+    const payload = createBackup();
+    downloadBackupFile(payload);
+  }, [createBackup]);
+
+  const importBackup = useCallback(async (ev) => {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const body = parsed?.data && typeof parsed.data === "object" ? parsed.data : parsed;
+      const nextHist = Array.isArray(body?.history) ? body.history : null;
+      const nextActive = body?.active ?? null;
+      if (!nextHist) throw new Error("invalid_history");
+
+      setHist(nextHist);
+      dbSave("gym-h", nextHist);
+
+      let restoredActive = null;
+      if (nextActive?.rid && R[nextActive.rid]) {
+        dataRef.current = nextActive.data || {};
+        doneRef.current = nextActive.done || {};
+        setRid(nextActive.rid);
+        setEidx(nextActive.eidx || 0);
+        startRef.current = nextActive.st || Date.now();
+        setView(nextActive.view === "workout" ? "workout" : "routine");
+        dbSave("gym-a", nextActive);
+        restoredActive = nextActive;
+      } else {
+        dataRef.current = {};
+        doneRef.current = {};
+        setRid(null);
+        setEidx(0);
+        startRef.current = null;
+        setView("home");
+        dbSave("gym-a", null);
+      }
+      localSave(BACKUP_LATEST_KEY, makeBackupPayload(nextHist, restoredActive));
+      setVer(v => v + 1);
+      alert("Backup cargado correctamente.");
+    } catch {
+      alert("No se pudo cargar el backup. El archivo no es válido.");
+    }
+  }, []);
 
   // Extra safety: flush active session on app background/close.
   useEffect(() => {
@@ -494,7 +598,12 @@ export default function GymTracker() {
     Object.entries(dataRef.current).forEach(([eid, sets]) => {
       exObj[eid] = { sets: sets.map((s, i) => ({ ...s, done: doneRef.current[eid]?.[i] || false })) };
     });
-    setHist(p => [{ id: Date.now(), date: new Date().toISOString(), routine: rid, exercises: exObj, duration: dur }, ...p]);
+    const doneWorkout = { id: Date.now(), date: new Date().toISOString(), routine: rid, exercises: exObj, duration: dur };
+    const nextHist = [doneWorkout, ...hist];
+    setHist(nextHist);
+    dbSave("gym-h", nextHist);
+    const payload = createBackup(nextHist, null);
+    downloadBackupFile(payload);
     dataRef.current = {}; doneRef.current = {};
     setRid(null); dbSave("gym-a", null); setView("home");
   };
@@ -527,6 +636,13 @@ export default function GymTracker() {
           <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{dayF[today.getDay()]} {today.getDate()} de {months[today.getMonth()]}</div>
         </div>
         <div style={css.body}>
+          <input
+            ref={backupFileRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={importBackup}
+            style={{ display: "none" }}
+          />
           {rid && (
             <div onClick={() => { setView(rid ? "routine" : "home"); }}
               style={{ margin: "10px 12px", padding: 14, background: "#dcfce7", border: "2px solid #86efac", borderRadius: 14, cursor: "pointer" }}>
@@ -555,6 +671,26 @@ export default function GymTracker() {
             <div style={{ fontSize: 11, color: "#3b82f6", lineHeight: 1.6 }}>
               <b>4 días:</b> Torso A → Pierna A → Torso B → Pierna B<br />
               <b>3 días:</b> Pierna A → Torso A/B → Pierna B
+            </div>
+          </div>
+          <div style={{ margin: "10px 12px 0", padding: 12, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 12, color: "#111827", marginBottom: 8 }}>💾 Backup total</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={exportBackup}
+                style={{ ...css.btn("#111827", "#fff"), fontSize: 13, padding: "10px 0" }}
+              >
+                Descargar backup
+              </button>
+              <button
+                onClick={() => backupFileRef.current?.click()}
+                style={{ ...css.btn("#fff", "#111827"), fontSize: 13, padding: "10px 0", border: "1px solid #d1d5db" }}
+              >
+                Cargar backup
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 6 }}>
+              Al terminar entrenamiento también se descarga una copia automática.
             </div>
           </div>
           {hist.length > 0 && <>

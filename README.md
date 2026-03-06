@@ -6,6 +6,8 @@ App web de entrenamiento con persistencia automática de sesión activa y histor
 - Por defecto la app guarda todo en el propio navegador del teléfono (`localStorage`).
 - No necesita backend ni base de datos en la nube.
 - Coste mensual: 0 €.
+- Al terminar un entrenamiento descarga automáticamente un backup `.json` con todo el historial.
+- Puedes restaurar el backup desde el botón `Cargar backup` en la pantalla principal.
 
 ## Requisitos
 - Node.js 20+
