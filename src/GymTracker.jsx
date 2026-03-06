@@ -22,7 +22,7 @@ const R = {
     id: "torsoB", name: "Torso B", sub: "Pecho + Espalda + Brazos", icon: "🔥", type: "torso",
     ex: [
       { id: "tb1", name: "Press banca / máquina", sets: 4, reps: "8-12", rest: 120, notes: "", fallo: false },
-      { id: "tb2", name: "Remo cable / 1 mano", sets: 4, reps: "8-12", rest: 90, notes: "Grosor espalda", fallo: false },
+      { id: "tb2", name: "Remo Polea", sets: 4, reps: "8-12", rest: 90, notes: "Grosor espalda", fallo: false },
       { id: "tb3", name: "Jalón neutro cerrado", sets: 3, reps: "8-12", rest: 90, notes: "", fallo: false },
       { id: "tb4", name: "Aperturas máq./cable", sets: 2, reps: "12-20", rest: 60, notes: "", fallo: true },
       { id: "tb5", name: "Elevaciones laterales", sets: 4, reps: "12-20", rest: 50, notes: "", fallo: true },
