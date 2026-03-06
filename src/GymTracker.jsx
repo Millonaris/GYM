@@ -276,11 +276,11 @@ const SetRow = memo(function SetRow({ idx, initWeight, initReps, initDone, onSav
   const rRef = useRef(null);
   const [done, setDone] = useState(initDone);
 
-  const flush = () => {
+  const flush = useCallback(() => {
     const w = wRef.current ? parseFloat(wRef.current.value) || 0 : 0;
     const r = rRef.current ? parseInt(rRef.current.value) || 0 : 0;
     onSave(idx, w, r);
-  };
+  }, [idx, onSave]);
 
   const handleToggle = () => {
     flush();
@@ -306,6 +306,7 @@ const SetRow = memo(function SetRow({ idx, initWeight, initReps, initDone, onSav
           <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", marginBottom: 4 }}>Peso (kg)</label>
           <input ref={wRef} type="number" inputMode="decimal" placeholder="0"
             defaultValue={initWeight || ""}
+            onInput={flush}
             onBlur={flush}
             style={{ width: "100%", background: "#f9fafb", border: "2px solid #e5e7eb", borderRadius: 12, padding: "14px 8px", textAlign: "center", fontSize: 20, fontWeight: 700, outline: "none", boxSizing: "border-box", WebkitAppearance: "none", MozAppearance: "textfield" }} />
         </div>
@@ -313,6 +314,7 @@ const SetRow = memo(function SetRow({ idx, initWeight, initReps, initDone, onSav
           <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", marginBottom: 4 }}>Reps</label>
           <input ref={rRef} type="number" inputMode="numeric" placeholder="0"
             defaultValue={initReps || ""}
+            onInput={flush}
             onBlur={flush}
             style={{ width: "100%", background: "#f9fafb", border: "2px solid #e5e7eb", borderRadius: 12, padding: "14px 8px", textAlign: "center", fontSize: 20, fontWeight: 700, outline: "none", boxSizing: "border-box", WebkitAppearance: "none", MozAppearance: "textfield" }} />
         </div>
@@ -400,6 +402,14 @@ export default function GymTracker() {
 
   // Open routine
   const openRoutine = useCallback((id) => {
+    if (rid && rid !== id && Object.keys(dataRef.current).length > 0) {
+      const ok = confirm(`Ya tienes un entrenamiento en curso (${R[rid]?.name || rid}). Si abres ${R[id]?.name || id}, perderás la sesión actual. ¿Continuar?`);
+      if (!ok) {
+        saveActive("routine");
+        setView("routine");
+        return;
+      }
+    }
     if (rid === id && Object.keys(dataRef.current).length > 0) {
       // Resume — don't reset eidx, keep where we were
       setView("routine");
