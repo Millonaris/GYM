@@ -64,6 +64,21 @@ const R = {
 };
 
 const allExOf = (id) => [...R[id].ex, ...R[id].mini];
+const EX_DEFAULTS = {
+  // Torso B
+  tb1: [
+    { weight: 52.5, reps: 9 },
+    { weight: 52.5, reps: 8 },
+    { weight: 52.5, reps: 8 },
+    { weight: 50, reps: 8 },
+  ],
+  tb3: [
+    { weight: 77, reps: 8 },
+    { weight: 77, reps: 8 },
+    { weight: 75, reps: 8 },
+    { weight: 75, reps: 8 },
+  ],
+};
 
 /* ═══════════════════════════════════════════
    STORAGE — safe, with timeouts, error-proof
@@ -549,7 +564,11 @@ export default function GymTracker() {
     const exs = allExOf(id);
     const d = {}, dn = {};
     exs.forEach(e => {
-      d[e.id] = Array.from({ length: e.sets }, () => ({ weight: 0, reps: 0 }));
+      const base = Array.from({ length: e.sets }, (_, i) => {
+        const preset = EX_DEFAULTS[e.id]?.[i];
+        return preset ? { weight: preset.weight, reps: preset.reps } : { weight: 0, reps: 0 };
+      });
+      d[e.id] = base;
       dn[e.id] = Array.from({ length: e.sets }, () => false);
     });
     const prev = hist.filter(w => w.routine === id).sort((a, b) => new Date(b.date) - new Date(a.date))[0];
