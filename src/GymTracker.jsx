@@ -363,9 +363,39 @@ export default function GymTracker() {
   const startRef = useRef(null);
   const readyRef = useRef(false);
   const backupFileRef = useRef(null);
+  const [dialog, setDialog] = useState(null);
   const [calM, setCalM] = useState(new Date().getMonth());
   const [calY, setCalY] = useState(new Date().getFullYear());
   const [detW, setDetW] = useState(null);
+
+  const showDialog = useCallback((opts) => {
+    setDialog({
+      title: opts?.title || "Confirmar",
+      message: opts?.message || "",
+      confirmText: opts?.confirmText || "Aceptar",
+      cancelText: opts?.cancelText || "Cancelar",
+      showCancel: opts?.showCancel !== false,
+      tone: opts?.tone || "default",
+      onConfirm: typeof opts?.onConfirm === "function" ? opts.onConfirm : null,
+      onCancel: typeof opts?.onCancel === "function" ? opts.onCancel : null,
+    });
+  }, []);
+
+  const closeDialog = useCallback(() => {
+    setDialog(null);
+  }, []);
+
+  const handleDialogCancel = useCallback(() => {
+    const cb = dialog?.onCancel;
+    setDialog(null);
+    cb?.();
+  }, [dialog]);
+
+  const handleDialogConfirm = useCallback(() => {
+    const cb = dialog?.onConfirm;
+    setDialog(null);
+    cb?.();
+  }, [dialog]);
 
   // Load on mount
   useEffect(() => {
@@ -472,11 +502,22 @@ export default function GymTracker() {
       }
       localSave(BACKUP_LATEST_KEY, makeBackupPayload(nextHist, restoredActive));
       setVer(v => v + 1);
-      alert("Backup cargado correctamente.");
+      showDialog({
+        title: "Backup cargado",
+        message: "Se restauraron tus datos correctamente.",
+        confirmText: "Perfecto",
+        showCancel: false,
+      });
     } catch {
-      alert("No se pudo cargar el backup. El archivo no es válido.");
+      showDialog({
+        title: "No se pudo cargar",
+        message: "El archivo no es válido o está dañado.",
+        confirmText: "Entendido",
+        showCancel: false,
+        tone: "warning",
+      });
     }
-  }, []);
+  }, [showDialog]);
 
   // Extra safety: flush active session on app background/close.
   useEffect(() => {
@@ -504,22 +545,7 @@ export default function GymTracker() {
     return () => clearInterval(iv);
   }, [rid, saveActive]);
 
-  // Open routine
-  const openRoutine = useCallback((id) => {
-    if (rid && rid !== id && Object.keys(dataRef.current).length > 0) {
-      const ok = confirm(`Ya tienes un entrenamiento en curso (${R[rid]?.name || rid}). Si abres ${R[id]?.name || id}, perderás la sesión actual. ¿Continuar?`);
-      if (!ok) {
-        saveActive("routine");
-        setView("routine");
-        return;
-      }
-    }
-    if (rid === id && Object.keys(dataRef.current).length > 0) {
-      // Resume — don't reset eidx, keep where we were
-      setView("routine");
-      saveActive("routine");
-      return;
-    }
+  const startRoutine = useCallback((id) => {
     const exs = allExOf(id);
     const d = {}, dn = {};
     exs.forEach(e => {
@@ -543,7 +569,33 @@ export default function GymTracker() {
     setView("routine");
     // Save after state updates via timeout
     setTimeout(() => dbSave("gym-a", { rid: id, data: d, done: dn, st: Date.now(), eidx: 0, view: "routine" }), 50);
-  }, [rid, hist, saveActive]);
+  }, [hist]);
+
+  // Open routine
+  const openRoutine = useCallback((id) => {
+    if (rid && rid !== id && Object.keys(dataRef.current).length > 0) {
+      showDialog({
+        title: "Entrenamiento en curso",
+        message: `Ya tienes un entrenamiento en curso (${R[rid]?.name || rid}). Si abres ${R[id]?.name || id}, perderás la sesión actual.`,
+        confirmText: `Abrir ${R[id]?.name || "rutina"}`,
+        cancelText: "Seguir actual",
+        tone: "warning",
+        onConfirm: () => startRoutine(id),
+        onCancel: () => {
+          saveActive("routine");
+          setView("routine");
+        },
+      });
+      return;
+    }
+    if (rid === id && Object.keys(dataRef.current).length > 0) {
+      // Resume — don't reset eidx, keep where we were
+      setView("routine");
+      saveActive("routine");
+      return;
+    }
+    startRoutine(id);
+  }, [rid, saveActive, showDialog, startRoutine]);
 
   // Set handlers — save to storage on every change
   const onSaveSet = useCallback((si, w, r) => {
@@ -609,9 +661,20 @@ export default function GymTracker() {
   };
 
   const discard = () => {
-    if (!confirm("¿Descartar entrenamiento?")) return;
-    dataRef.current = {}; doneRef.current = {};
-    setRid(null); dbSave("gym-a", null); setView("home");
+    showDialog({
+      title: "Descartar entrenamiento",
+      message: "Se perderá la sesión actual no finalizada.",
+      confirmText: "Descartar",
+      cancelText: "Cancelar",
+      tone: "warning",
+      onConfirm: () => {
+        dataRef.current = {};
+        doneRef.current = {};
+        setRid(null);
+        dbSave("gym-a", null);
+        setView("home");
+      },
+    });
   };
 
   const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -702,6 +765,7 @@ export default function GymTracker() {
             onNext={() => { let m = calM + 1, y = calY; if (m > 11) { m = 0; y++; } setCalM(m); setCalY(y); }} />
         </div>
         <BNav act="home" go={setView} />
+        <AppDialog dialog={dialog} onCancel={handleDialogCancel} onConfirm={handleDialogConfirm} onClose={closeDialog} />
       </div>
     );
   }
@@ -748,6 +812,7 @@ export default function GymTracker() {
             <button onClick={finish} disabled={cnt < 1} style={{ flex: 1.5, padding: "14px 0", borderRadius: 14, border: "none", background: cnt < 1 ? "#d1d5db" : "#22c55e", fontWeight: 700, fontSize: 15, color: "#fff", cursor: cnt < 1 ? "default" : "pointer", boxShadow: cnt < 1 ? "none" : "0 4px 12px rgba(34,197,94,0.3)" }}>Terminar ✓</button>
           </div>
         </div>
+        <AppDialog dialog={dialog} onCancel={handleDialogCancel} onConfirm={handleDialogConfirm} onClose={closeDialog} />
       </div>
     );
   }
@@ -798,6 +863,7 @@ export default function GymTracker() {
               : <button onClick={goToRoutineView} style={css.btn("#22c55e", "#fff")}>Ver resumen ✓</button>}
           </div>
         </div>
+        <AppDialog dialog={dialog} onCancel={handleDialogCancel} onConfirm={handleDialogConfirm} onClose={closeDialog} />
       </div>
     );
   }
@@ -809,9 +875,19 @@ export default function GymTracker() {
       <div style={css.body}>
         {hist.length === 0
           ? <div style={{ textAlign: "center", padding: "60px 24px", color: "#d1d5db" }}><div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>Sin entrenamientos aún</div>
-          : hist.map(w => <HistCard key={w.id} w={w} del onTap={() => { setDetW(w); setView("detail"); }} onDel={() => { if (confirm("¿Eliminar?")) setHist(p => p.filter(x => x.id !== w.id)); }} />)}
+          : hist.map(w => <HistCard key={w.id} w={w} del onTap={() => { setDetW(w); setView("detail"); }} onDel={() => {
+            showDialog({
+              title: "Eliminar entrenamiento",
+              message: "Esta acción no se puede deshacer.",
+              confirmText: "Eliminar",
+              cancelText: "Cancelar",
+              tone: "danger",
+              onConfirm: () => setHist(p => p.filter(x => x.id !== w.id)),
+            });
+          }} />)}
       </div>
       <BNav act="history" go={setView} />
+      <AppDialog dialog={dialog} onCancel={handleDialogCancel} onConfirm={handleDialogConfirm} onClose={closeDialog} />
     </div>
   );
 
@@ -843,6 +919,7 @@ export default function GymTracker() {
           })}
         </div>
         <BNav act="history" go={setView} />
+        <AppDialog dialog={dialog} onCancel={handleDialogCancel} onConfirm={handleDialogConfirm} onClose={closeDialog} />
       </div>
     );
   }
@@ -893,11 +970,100 @@ export default function GymTracker() {
           {hist.length === 0 && <div style={{ textAlign: "center", padding: "60px 24px", color: "#d1d5db" }}><div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>Entrena para ver tu progresión</div>}
         </div>
         <BNav act="stats" go={setView} />
+        <AppDialog dialog={dialog} onCancel={handleDialogCancel} onConfirm={handleDialogConfirm} onClose={closeDialog} />
       </div>
     );
   }
 
   return null;
+}
+
+function AppDialog({ dialog, onCancel, onConfirm, onClose }) {
+  if (!dialog) return null;
+
+  const isWarn = dialog.tone === "warning";
+  const isDanger = dialog.tone === "danger";
+  const titleColor = isDanger ? "#b91c1c" : isWarn ? "#c2410c" : "#1f2937";
+  const confirmBg = isDanger ? "#ef4444" : isWarn ? "#f97316" : "#3b82f6";
+  const confirmShadow = isDanger ? "rgba(239,68,68,0.28)" : isWarn ? "rgba(249,115,22,0.28)" : "rgba(59,130,246,0.28)";
+  const iconBg = isDanger ? "#fee2e2" : isWarn ? "#ffedd5" : "#dbeafe";
+  const iconColor = isDanger ? "#dc2626" : isWarn ? "#ea580c" : "#2563eb";
+  const icon = isDanger ? "🗑️" : isWarn ? "⚠️" : "💬";
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(17,24,39,0.42)",
+        backdropFilter: "blur(2px)",
+        zIndex: 1000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 14,
+      }}
+    >
+      <div
+        onClick={(ev) => ev.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 430,
+          background: "#fff",
+          border: "1px solid #e5e7eb",
+          borderRadius: 18,
+          boxShadow: "0 18px 42px rgba(0,0,0,0.24)",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: "16px 16px 6px", display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: iconBg, color: iconColor, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+            {icon}
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: titleColor }}>{dialog.title}</div>
+        </div>
+        <div style={{ padding: "4px 16px 16px", fontSize: 15, color: "#4b5563", lineHeight: 1.45 }}>
+          {dialog.message}
+        </div>
+        <div style={{ padding: "0 16px 16px", display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          {dialog.showCancel && (
+            <button
+              onClick={onCancel}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 12,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                color: "#374151",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: "pointer",
+              }}
+            >
+              {dialog.cancelText}
+            </button>
+          )}
+          <button
+            onClick={onConfirm}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 12,
+              border: "none",
+              background: confirmBg,
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 14,
+              cursor: "pointer",
+              boxShadow: `0 6px 14px ${confirmShadow}`,
+            }}
+          >
+            {dialog.confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ═══════════════════════════════════════════
