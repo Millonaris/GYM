@@ -71,6 +71,7 @@ const allExOf = (id) => [...R[id].ex, ...R[id].mini];
 const LS = typeof window !== "undefined" && window.localStorage ? window.localStorage : null;
 const UID_KEY = "gym-uid";
 const KEY_TO_FIELD = { "gym-h": "history", "gym-a": "active" };
+const REMOTE_ENABLED = import.meta.env.VITE_REMOTE_SYNC === "1";
 
 function getUid() {
   if (!LS) return null;
@@ -121,7 +122,7 @@ async function apiFetch(url, opts = {}, ms = 3500) {
 }
 
 async function loadRemoteState() {
-  if (!UID) return null;
+  if (!REMOTE_ENABLED || !UID) return null;
   try {
     const res = await apiFetch(`/api/state?uid=${encodeURIComponent(UID)}`);
     if (!res.ok) return null;
@@ -136,7 +137,7 @@ async function loadRemoteState() {
 }
 
 function scheduleRemoteFlush(delay = 700) {
-  if (!UID || flushTimer) return;
+  if (!REMOTE_ENABLED || !UID || flushTimer) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
     void flushRemotePatch();
@@ -144,7 +145,7 @@ function scheduleRemoteFlush(delay = 700) {
 }
 
 async function flushRemotePatch(keepalive = false) {
-  if (!UID || Object.keys(pendingPatch).length === 0) return;
+  if (!REMOTE_ENABLED || !UID || Object.keys(pendingPatch).length === 0) return;
   const patch = pendingPatch;
   pendingPatch = {};
   try {
@@ -161,12 +162,12 @@ async function flushRemotePatch(keepalive = false) {
 
 function queueRemoteSave(k, v) {
   const field = KEY_TO_FIELD[k];
-  if (!field || !UID) return;
+  if (!REMOTE_ENABLED || !field || !UID) return;
   pendingPatch[field] = v;
   scheduleRemoteFlush();
 }
 
-if (typeof window !== "undefined" && !window.__gymRemoteFlushBound) {
+if (REMOTE_ENABLED && typeof window !== "undefined" && !window.__gymRemoteFlushBound) {
   window.__gymRemoteFlushBound = true;
   const flushOnLeave = () => { void flushRemotePatch(true); };
   window.addEventListener("beforeunload", flushOnLeave);
@@ -176,7 +177,7 @@ if (typeof window !== "undefined" && !window.__gymRemoteFlushBound) {
 async function dbLoad(k, fb) {
   const local = localLoad(k, fb);
   const field = KEY_TO_FIELD[k];
-  if (!field) return local;
+  if (!field || !REMOTE_ENABLED) return local;
   if (!remoteStatePromise) remoteStatePromise = loadRemoteState();
   try {
     const remote = await remoteStatePromise;
