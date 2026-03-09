@@ -87,6 +87,7 @@ const LS = typeof window !== "undefined" && window.localStorage ? window.localSt
 const UID_KEY = "gym-uid";
 const KEY_TO_FIELD = { "gym-h": "history", "gym-a": "active" };
 const BACKUP_LATEST_KEY = "gym-backup-latest";
+const REST_TIMER_KEY = "gym-rest-timer";
 const REMOTE_ENABLED = import.meta.env.VITE_REMOTE_SYNC === "1";
 
 function getUid() {
@@ -244,34 +245,183 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
   const [running, setRunning] = useState(false);
   const [target, setTarget] = useState(defaultRest || 90);
   const iv = useRef(null);
+  const deadlineRef = useRef(null);
+  const notifiedRef = useRef(false);
+  const audioRef = useRef(null);
+  const wakeLockRef = useRef(null);
+
+  const saveTimer = useCallback((next) => {
+    localSave(REST_TIMER_KEY, next);
+  }, []);
+
+  const releaseWakeLock = useCallback(async () => {
+    try {
+      await wakeLockRef.current?.release?.();
+    } catch {}
+    wakeLockRef.current = null;
+  }, []);
+
+  const requestWakeLock = useCallback(async () => {
+    if (typeof document === "undefined" || document.visibilityState !== "visible") return;
+    if (!("wakeLock" in navigator) || wakeLockRef.current) return;
+    try {
+      wakeLockRef.current = await navigator.wakeLock.request("screen");
+      wakeLockRef.current.addEventListener("release", () => {
+        wakeLockRef.current = null;
+      });
+    } catch {}
+  }, []);
+
+  const ensureAudio = useCallback(async () => {
+    if (typeof window === "undefined") return null;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!audioRef.current) audioRef.current = new AC();
+    try {
+      if (audioRef.current.state === "suspended") await audioRef.current.resume();
+    } catch {}
+    return audioRef.current;
+  }, []);
+
+  const playBeep = useCallback(async () => {
+    const ctx = await ensureAudio();
+    if (!ctx) return;
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.36);
+    } catch {}
+  }, [ensureAudio]);
+
+  const notifyFinished = useCallback(async () => {
+    if (notifiedRef.current) return;
+    notifiedRef.current = true;
+    try { navigator.vibrate?.([250, 120, 250, 120, 250]); } catch {}
+    void playBeep();
+    if (typeof document !== "undefined" && document.visibilityState === "hidden" && "Notification" in window) {
+      try {
+        if (Notification.permission === "granted") {
+          new Notification("Descanso terminado", { body: "Vuelve a la serie.", silent: false });
+        } else if (Notification.permission === "default") {
+          const permission = await Notification.requestPermission();
+          if (permission === "granted") {
+            new Notification("Descanso terminado", { body: "Vuelve a la serie.", silent: false });
+          }
+        }
+      } catch {}
+    }
+  }, [playBeep]);
+
+  const clearTicker = useCallback(() => {
+    if (iv.current) clearInterval(iv.current);
+    iv.current = null;
+  }, []);
+
+  const syncFromDeadline = useCallback(() => {
+    const endAt = deadlineRef.current;
+    if (!endAt) {
+      setRunning(false);
+      setSecs(0);
+      return;
+    }
+    const remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+    setSecs(remaining);
+    setRunning(remaining > 0);
+    if (remaining <= 0) {
+      deadlineRef.current = null;
+      saveTimer({ target, remaining: 0, endAt: null, completedAt: Date.now() });
+      clearTicker();
+      void releaseWakeLock();
+      void notifyFinished();
+    }
+  }, [clearTicker, notifyFinished, releaseWakeLock, saveTimer, target]);
 
   useEffect(() => { setTarget(defaultRest || 90); }, [defaultRest]);
-  useEffect(() => () => { if (iv.current) clearInterval(iv.current); }, []);
+
+  useEffect(() => {
+    const stored = localLoad(REST_TIMER_KEY, null);
+    if (stored?.target) setTarget(stored.target);
+    if (stored?.endAt) {
+      deadlineRef.current = stored.endAt;
+      notifiedRef.current = false;
+      syncFromDeadline();
+      iv.current = setInterval(syncFromDeadline, 500);
+    } else if (stored?.remaining > 0) {
+      setSecs(stored.remaining);
+    }
+    return () => {
+      clearTicker();
+      void releaseWakeLock();
+    };
+  }, [clearTicker, releaseWakeLock, syncFromDeadline]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && deadlineRef.current) {
+        void requestWakeLock();
+        void ensureAudio();
+        syncFromDeadline();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [ensureAudio, requestWakeLock, syncFromDeadline]);
 
   const go = useCallback((t) => {
-    if (iv.current) clearInterval(iv.current);
+    clearTicker();
     const dur = t || target;
+    const endAt = Date.now() + dur * 1000;
+    deadlineRef.current = endAt;
+    notifiedRef.current = false;
     setSecs(dur);
     setRunning(true);
-    iv.current = setInterval(() => {
-      setSecs(p => {
-        if (p <= 1) {
-          clearInterval(iv.current); iv.current = null;
-          setRunning(false);
-          try { navigator.vibrate?.([200, 100, 200]); } catch {}
-          return 0;
-        }
-        return p - 1;
-      });
-    }, 1000);
-  }, [target]);
+    saveTimer({ target: dur, remaining: dur, endAt, completedAt: null });
+    iv.current = setInterval(syncFromDeadline, 500);
+    void ensureAudio();
+    void requestWakeLock();
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, [clearTicker, ensureAudio, requestWakeLock, saveTimer, syncFromDeadline, target]);
 
   useEffect(() => { if (triggerRef) triggerRef.current = go; }, [go, triggerRef]);
 
-  const stop = () => { if (iv.current) { clearInterval(iv.current); iv.current = null; } setRunning(false); };
-  const reset = () => { stop(); setSecs(0); };
+  const stop = useCallback(() => {
+    clearTicker();
+    const remaining = deadlineRef.current ? Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000)) : secs;
+    deadlineRef.current = null;
+    setSecs(remaining);
+    setRunning(false);
+    saveTimer({ target, remaining, endAt: null, completedAt: null });
+    void releaseWakeLock();
+  }, [clearTicker, releaseWakeLock, saveTimer, secs, target]);
+
+  const reset = useCallback(() => {
+    clearTicker();
+    deadlineRef.current = null;
+    notifiedRef.current = false;
+    setRunning(false);
+    setSecs(0);
+    saveTimer({ target, remaining: 0, endAt: null, completedAt: null });
+    void releaseWakeLock();
+  }, [clearTicker, releaseWakeLock, saveTimer, target]);
+
   const fmt = s => s <= 0 ? "0:00" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const active = running || secs > 0;
+
+  useEffect(() => {
+    if (running) return;
+    saveTimer({ target, remaining: secs, endAt: null, completedAt: null });
+  }, [running, saveTimer, secs, target]);
 
   const chipStyle = (s) => ({
     padding: "6px 14px", borderRadius: 20, fontSize: 13, fontWeight: 700,
