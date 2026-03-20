@@ -377,7 +377,11 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
     }
   }, [clearTicker, notifyFinished, releaseWakeLock, saveTimer, target]);
 
-  useEffect(() => { setTarget(defaultRest || 90); }, [defaultRest]);
+  useEffect(() => {
+    const nextTarget = defaultRest || 0;
+    setTarget(nextTarget);
+    if (!deadlineRef.current) setSecs(nextTarget);
+  }, [defaultRest]);
 
   useEffect(() => {
     const stored = localLoad(REST_TIMER_KEY, null);
@@ -453,29 +457,26 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
 
   const fmt = s => s <= 0 ? "0:00" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const active = running || secs > 0;
-  const quickOptions = Array.from(new Set([40, 45, 50, 60, 90, 120, 150, 180, defaultRest || 90])).sort((a, b) => a - b);
+  const exactLabel = target === 180 ? "3 min" : target === 150 ? "2 min 30 s" : `${target}s`;
 
   useEffect(() => {
     if (running) return;
     saveTimer({ target, remaining: secs, endAt: null, completedAt: null });
   }, [running, saveTimer, secs, target]);
 
-  const chipStyle = (s) => ({
-    padding: "6px 14px", borderRadius: 20, fontSize: 13, fontWeight: 700,
-    border: `2px solid ${target === s ? "#3b82f6" : "#e5e7eb"}`,
-    background: target === s ? "#dbeafe" : "#f9fafb",
-    color: target === s ? "#2563eb" : "#6b7280", cursor: "pointer"
-  });
-
   return (
     <div style={{ padding: "0 12px", marginTop: 8 }}>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-        <span style={{ fontSize: 12, color: "#9ca3af", padding: "6px 0" }}>Descanso:</span>
-        {quickOptions.map(s => (
-          <button key={s} onClick={() => { stop(); setTarget(s); setSecs(s); }} style={chipStyle(s)}>{s}s</button>
-        ))}
+      <div style={{ marginBottom: 8, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 12, padding: "10px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.4 }}>Descanso rutina</span>
+        <span style={{ fontSize: 14, fontWeight: 800, color: target > 0 ? "#2563eb" : "#ea580c" }}>
+          {target > 0 ? exactLabel : "Sin descanso"}
+        </span>
       </div>
-      {active ? (
+      {target <= 0 ? (
+        <div style={{ width: "100%", padding: 12, borderRadius: 12, background: "#fff7ed", border: "2px solid #fed7aa", color: "#ea580c", fontWeight: 700, fontSize: 14, textAlign: "center", marginBottom: 8 }}>
+          Pasa directamente al siguiente ejercicio
+        </div>
+      ) : active ? (
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: 12, display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <button onClick={reset} style={{ padding: "8px 14px", borderRadius: 10, background: "#f3f4f6", border: "none", fontWeight: 700, fontSize: 16, cursor: "pointer" }}>✕</button>
           <div style={{ flex: 1, textAlign: "center", fontSize: 36, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: secs <= 5 && secs > 0 && running ? "#f97316" : secs <= 0 ? "#22c55e" : "#111827" }}>
@@ -487,7 +488,7 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
         </div>
       ) : (
         <button onClick={() => go(target)} style={{ width: "100%", padding: 12, borderRadius: 12, background: "#eff6ff", border: "2px solid #bfdbfe", color: "#2563eb", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 8 }}>
-          ⏱ Iniciar descanso ({target}s)
+          ⏱ Iniciar descanso ({exactLabel})
         </button>
       )}
     </div>
