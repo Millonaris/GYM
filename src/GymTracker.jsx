@@ -412,6 +412,16 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [ensureAudio, requestWakeLock, syncFromDeadline]);
 
+  const reset = useCallback(() => {
+    clearTicker();
+    deadlineRef.current = null;
+    notifiedRef.current = false;
+    setRunning(false);
+    setSecs(0);
+    saveTimer({ target, remaining: 0, endAt: null, completedAt: null });
+    void releaseWakeLock();
+  }, [clearTicker, releaseWakeLock, saveTimer, target]);
+
   const go = useCallback((t) => {
     clearTicker();
     const dur = t ?? target;
@@ -444,16 +454,6 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
     saveTimer({ target, remaining, endAt: null, completedAt: null });
     void releaseWakeLock();
   }, [clearTicker, releaseWakeLock, saveTimer, secs, target]);
-
-  const reset = useCallback(() => {
-    clearTicker();
-    deadlineRef.current = null;
-    notifiedRef.current = false;
-    setRunning(false);
-    setSecs(0);
-    saveTimer({ target, remaining: 0, endAt: null, completedAt: null });
-    void releaseWakeLock();
-  }, [clearTicker, releaseWakeLock, saveTimer, target]);
 
   const fmt = s => s <= 0 ? "0:00" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const active = running || secs > 0;
