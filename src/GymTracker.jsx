@@ -5,59 +5,59 @@ import { useState, useEffect, useCallback, useRef, memo } from "react";
    ═══════════════════════════════════════════ */
 const R = {
   torsoA: {
-    id: "torsoA", name: "Torso A", sub: "Espalda + Hombros 3D", icon: "💪", type: "torso",
+    id: "torsoA", name: "Torso A", sub: "Express · Espalda + Hombros 3D", icon: "💪", type: "torso",
     ex: [
-      { id: "ta1", name: "Dominadas / Jalón", sets: 4, reps: "8-12", rest: 120, notes: "Excéntrica 3s", fallo: false },
-      { id: "ta2", name: "Press inclinado manc.", sets: 4, reps: "8-12", rest: 120, notes: "Pecho superior", fallo: false },
-      { id: "ta3", name: "Remo barra / máquina", sets: 3, reps: "8-12", rest: 90, notes: "", fallo: false },
-      { id: "ta4", name: "Press militar manc.", sets: 3, reps: "8-12", rest: 90, notes: "", fallo: false },
-      { id: "ta5", name: "Elevaciones laterales", sets: 4, reps: "12-20", rest: 50, notes: "Hombros 3D", fallo: true },
-      { id: "ta6", name: "Face pull / Pájaro", sets: 3, reps: "12-20", rest: 50, notes: "Delt. posterior", fallo: true },
-      { id: "ta7", name: "Tríceps polea", sets: 2, reps: "10-15", rest: 60, notes: "", fallo: true },
-      { id: "ta8", name: "Curl bíceps", sets: 2, reps: "10-15", rest: 60, notes: "", fallo: true },
+      { id: "ta1", name: "Dominadas / Jalón al pecho", sets: 4, reps: "8-12", rest: 120, notes: "Excéntrica 3s. Compuesto clave", fallo: false },
+      { id: "ta2", name: "Press inclinado mancuernas", sets: 4, reps: "8-12", rest: 90, notes: "Pecho superior", fallo: false },
+      { id: "ta3", name: "Remo barra / máquina", sets: 3, reps: "8-12", rest: 90, notes: "Tira hacia el pecho", fallo: false },
+      { id: "ta4", name: "Press militar mancuernas", sets: 3, reps: "8-12", rest: 90, notes: "", fallo: false },
+      { id: "ta5", name: "Elevaciones laterales", sets: 4, reps: "12-20", rest: 0, notes: "SS hombros con Face pull", fallo: true, ss: "A" },
+      { id: "ta6", name: "Face pull / Pájaro", sets: 3, reps: "12-20", rest: 45, notes: "Delt. posterior. Descansa y repite", fallo: true, ss: "B" },
+      { id: "ta7", name: "Tríceps en polea", sets: 2, reps: "10-15", rest: 0, notes: "SS brazos con Curl bíceps", fallo: true, ss: "A" },
+      { id: "ta8", name: "Curl bíceps", sets: 2, reps: "10-15", rest: 45, notes: "Descansa y repite", fallo: true, ss: "B" },
     ],
-    mini: [{ id: "ta9", name: "Extensión cuádriceps", sets: 2, reps: "12-15", rest: 60, notes: "Mini pierna", fallo: true }]
+    mini: [{ id: "ta9", name: "Extensión cuádriceps", sets: 2, reps: "12-15", rest: 45, notes: "Mini pierna", fallo: true }]
   },
   torsoB: {
-    id: "torsoB", name: "Torso B", sub: "Pecho + Espalda + Brazos", icon: "🔥", type: "torso",
+    id: "torsoB", name: "Torso B", sub: "Express · Pecho + Grosor + Brazos", icon: "🔥", type: "torso",
     ex: [
-      { id: "tb1", name: "Press banca / máquina", sets: 4, reps: "8-12", rest: 120, notes: "", fallo: false },
+      { id: "tb1", name: "Press banca plano / máquina", sets: 4, reps: "8-12", rest: 120, notes: "Compuesto clave pecho", fallo: false },
       { id: "tb2", name: "Remo Polea", sets: 4, reps: "8-12", rest: 90, notes: "Grosor espalda", fallo: false },
-      { id: "tb3", name: "Jalón neutro cerrado", sets: 3, reps: "8-12", rest: 90, notes: "", fallo: false },
-      { id: "tb4", name: "Aperturas máq./cable", sets: 2, reps: "12-20", rest: 60, notes: "", fallo: true },
-      { id: "tb5", name: "Elevaciones laterales", sets: 4, reps: "12-20", rest: 50, notes: "", fallo: true },
-      { id: "tb6", name: "Curl bíceps inclinado", sets: 3, reps: "8-12", rest: 70, notes: "", fallo: true },
-      { id: "tb7", name: "Tríceps sobre cabeza", sets: 3, reps: "8-12", rest: 70, notes: "", fallo: true },
+      { id: "tb3", name: "Jalón neutro cerrado", sets: 3, reps: "8-12", rest: 90, notes: "Dorsales + bíceps", fallo: false },
+      { id: "tb4", name: "Aperturas máquina / cable", sets: 2, reps: "12-20", rest: 0, notes: "SS pecho+hombro", fallo: true, ss: "A" },
+      { id: "tb5", name: "Elevaciones laterales", sets: 4, reps: "12-20", rest: 45, notes: "Descansa y repite", fallo: true, ss: "B" },
+      { id: "tb6", name: "Curl bíceps inclinado", sets: 3, reps: "8-12", rest: 0, notes: "SS brazos", fallo: true, ss: "A" },
+      { id: "tb7", name: "Tríceps sobre cabeza", sets: 3, reps: "8-12", rest: 50, notes: "Descansa y repite", fallo: true, ss: "B" },
     ],
     mini: [
-      { id: "tb8", name: "Curl femoral", sets: 2, reps: "10-15", rest: 60, notes: "Mini pierna", fallo: true },
-      { id: "tb9", name: "Gemelos", sets: 2, reps: "12-20", rest: 45, notes: "Mini pierna", fallo: true }
+      { id: "tb8", name: "Curl femoral", sets: 2, reps: "10-15", rest: 0, notes: "Mini pierna SS", fallo: true, ss: "A" },
+      { id: "tb9", name: "Gemelos", sets: 2, reps: "12-20", rest: 45, notes: "Mini pierna. Descansa y repite", fallo: true, ss: "B" }
     ]
   },
   piernaA: {
-    id: "piernaA", name: "Pierna A", sub: "Cuádriceps + Glúteos", icon: "🦵", type: "pierna",
+    id: "piernaA", name: "Pierna A", sub: "Express · Cuádriceps dominante", icon: "🦵", type: "pierna",
     ex: [
       { id: "pa1", name: "Prensa inclinada", sets: 4, reps: "8-12", rest: 150, notes: "Pies arriba = + glúteo", fallo: false },
       { id: "pa2", name: "Hack squat / Sent. máq.", sets: 3, reps: "8-12", rest: 120, notes: "Estable", fallo: false },
-      { id: "pa3", name: "Extensión cuádriceps", sets: 3, reps: "10-15", rest: 60, notes: "Rest-pause última", fallo: true },
-      { id: "pa4", name: "Curl femoral tumbado", sets: 3, reps: "10-15", rest: 70, notes: "", fallo: true },
-      { id: "pa5", name: "Curl femoral sentado", sets: 2, reps: "10-15", rest: 60, notes: "", fallo: true },
-      { id: "pa6", name: "Abductora", sets: 3, reps: "15-20", rest: 50, notes: "Glúteo medio", fallo: true },
-      { id: "pa7", name: "Gemelos de pie", sets: 4, reps: "10-20", rest: 50, notes: "Pausa abajo 2s", fallo: true },
+      { id: "pa3", name: "Extensión cuádriceps", sets: 3, reps: "10-15", rest: 0, notes: "SS cuádriceps + isquio", fallo: true, ss: "A" },
+      { id: "pa4", name: "Curl femoral tumbado", sets: 3, reps: "10-15", rest: 50, notes: "Descansa y repite", fallo: true, ss: "B" },
+      { id: "pa5", name: "Curl femoral sentado", sets: 2, reps: "10-15", rest: 50, notes: "", fallo: true },
+      { id: "pa6", name: "Abductora", sets: 3, reps: "15-20", rest: 0, notes: "SS glúteo + gemelo", fallo: true, ss: "A" },
+      { id: "pa7", name: "Gemelos de pie", sets: 4, reps: "10-20", rest: 40, notes: "Pausa abajo 2s. Descansa y repite", fallo: true, ss: "B" },
     ],
     mini: []
   },
   piernaB: {
-    id: "piernaB", name: "Pierna B", sub: "Isquios + Glúteo", icon: "🍑", type: "pierna",
+    id: "piernaB", name: "Pierna B", sub: "Express · Isquios + Glúteo", icon: "🍑", type: "pierna",
     ex: [
       { id: "pb1", name: "Hip thrust máq./Smith", sets: 4, reps: "8-12", rest: 120, notes: "Aprieta arriba 2s", fallo: false },
       { id: "pb2", name: "Prensa pies juntos", sets: 3, reps: "10-15", rest: 90, notes: "Rango completo", fallo: false },
-      { id: "pb3", name: "Curl femoral tumbado", sets: 3, reps: "10-15", rest: 70, notes: "", fallo: true },
-      { id: "pb4", name: "Curl femoral sentado", sets: 3, reps: "10-15", rest: 60, notes: "Drop set última", fallo: true },
-      { id: "pb5", name: "Extensión cuádriceps", sets: 2, reps: "12-15", rest: 60, notes: "", fallo: true },
-      { id: "pb6", name: "Abductora", sets: 3, reps: "15-20", rest: 50, notes: "Glúteo medio", fallo: true },
-      { id: "pb7", name: "Aductora", sets: 2, reps: "15-20", rest: 50, notes: "", fallo: true },
-      { id: "pb8", name: "Gemelos sentado", sets: 4, reps: "10-20", rest: 50, notes: "", fallo: true },
+      { id: "pb3", name: "Curl femoral tumbado", sets: 3, reps: "10-15", rest: 0, notes: "SS isquio + cuad", fallo: true, ss: "A" },
+      { id: "pb5", name: "Extensión cuádriceps", sets: 2, reps: "12-15", rest: 50, notes: "Descansa y repite", fallo: true, ss: "B" },
+      { id: "pb4", name: "Curl femoral sentado", sets: 3, reps: "10-15", rest: 50, notes: "Drop set última serie", fallo: true },
+      { id: "pb6", name: "Abductora", sets: 3, reps: "15-20", rest: 0, notes: "SS triple final", fallo: true, ss: "A" },
+      { id: "pb7", name: "Aductora", sets: 2, reps: "15-20", rest: 0, notes: "Sigue sin descansar", fallo: true, ss: "B" },
+      { id: "pb8", name: "Gemelos sentado", sets: 4, reps: "10-20", rest: 40, notes: "Descansa y repite desde 5A", fallo: true, ss: "C" },
     ],
     mini: []
   }
@@ -1007,6 +1007,7 @@ export default function GymTracker() {
           <div style={{ margin: "10px 12px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: 14, textAlign: "center" }}>
             <div style={{ fontSize: 14, color: "#4b5563" }}>{e.sets} series × {e.reps} reps · Descanso {e.rest}s</div>
             {e.notes && <div style={{ fontSize: 13, color: "#f97316", fontWeight: 600, marginTop: 4 }}>💡 {e.notes}</div>}
+            {e.ss && <div style={{ display: "inline-block", marginTop: 6, padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 800, background: "#111827", color: "#fff" }}>Superserie {e.ss}</div>}
             <div style={{ display: "inline-block", marginTop: 6, padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: e.fallo ? "#dcfce7" : "#fee2e2", color: e.fallo ? "#15803d" : "#dc2626" }}>
               {e.fallo ? "🟢 Última serie SÍ al fallo" : "🔴 NUNCA al fallo · 1-2 en recámara"}
             </div>
@@ -1269,6 +1270,7 @@ function ExBtn({ e, i, tp, dn, onTap }) {
           <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", background: "#f3f4f6", padding: "2px 8px", borderRadius: 6 }}>{e.sets}×{e.reps}</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", background: "#f3f4f6", padding: "2px 8px", borderRadius: 6 }}>⏱ {e.rest}s</span>
+            {e.ss && <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 6, background: "#111827", color: "#fff" }}>SS {e.ss}</span>}
             <span style={{
               fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
               background: e.fallo ? "#dcfce7" : "#fee2e2",
