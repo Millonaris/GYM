@@ -64,6 +64,27 @@ const R = {
 };
 
 const allExOf = (id) => [...R[id].ex, ...R[id].mini];
+const buildExerciseGroups = (items) => {
+  const groups = [];
+  let current = null;
+
+  items.forEach((item) => {
+    if (item.e.ss) {
+      if (!current) current = { type: "superset", items: [] };
+      current.items.push(item);
+      return;
+    }
+
+    if (current) {
+      groups.push(current);
+      current = null;
+    }
+    groups.push({ type: "single", items: [item] });
+  });
+
+  if (current) groups.push(current);
+  return groups;
+};
 const EX_DEFAULTS = {
   // Torso B
   tb1: [
@@ -942,6 +963,8 @@ export default function GymTracker() {
   // ═════ ROUTINE ═════
   if (view === "routine" && rid) {
     const r = R[rid], exs = allExOf(rid), dn = doneRef.current;
+    const mainGroups = buildExerciseGroups(r.ex.map((e, i) => ({ e, idx: i })));
+    const miniGroups = buildExerciseGroups(r.mini.map((e, i) => ({ e, idx: r.ex.length + i })));
     const cnt = exs.filter(e => dn[e.id]?.length >= e.sets && dn[e.id].slice(0, e.sets).every(Boolean)).length;
     const pct = Math.round((cnt / exs.length) * 100);
     const isTorso = r.type === "torso";
@@ -967,14 +990,30 @@ export default function GymTracker() {
         </div>
         <div style={css.body}>
           <div style={css.lbl}>Toca un ejercicio para registrar</div>
-          {r.ex.map((e, i) => <ExBtn key={e.id} e={e} i={i} tp={r.type} dn={dn[e.id]} onTap={() => goToWorkout(i)} />)}
+          {mainGroups.map((group, gi) => (
+            <RoutineExerciseBlock
+              key={`${r.id}-main-${gi}`}
+              group={group}
+              tp={r.type}
+              dnMap={dn}
+              onTap={goToWorkout}
+            />
+          ))}
           {r.mini.length > 0 && <>
             <div style={{ margin: "14px 12px 8px", padding: "8px 14px", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 16 }}>🦵</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: "#ea580c", textTransform: "uppercase", letterSpacing: 0.5 }}>Mini pierna</span>
               <span style={{ fontSize: 11, color: "#fb923c" }}>— estímulo extra</span>
             </div>
-            {r.mini.map((e, i) => <ExBtn key={e.id} e={e} i={r.ex.length + i} tp="pierna" dn={dn[e.id]} onTap={() => goToWorkout(r.ex.length + i)} />)}
+            {miniGroups.map((group, gi) => (
+              <RoutineExerciseBlock
+                key={`${r.id}-mini-${gi}`}
+                group={group}
+                tp="pierna"
+                dnMap={dn}
+                onTap={goToWorkout}
+              />
+            ))}
           </>}
           <div style={{ padding: "16px 12px", display: "flex", gap: 10 }}>
             <button onClick={discard} style={{ flex: 1, padding: "14px 0", borderRadius: 14, border: "2px solid #e5e7eb", background: "#fff", fontWeight: 700, fontSize: 15, color: "#6b7280", cursor: "pointer" }}>Descartar</button>
@@ -1243,7 +1282,6 @@ function ExBtn({ e, i, tp, dn, onTap }) {
   const ok = dn?.length >= e.sets && dn.slice(0, e.sets).every(Boolean);
   const isTorso = tp === "torso";
   const accent = isTorso ? "#3b82f6" : "#f97316";
-  const accentLight = isTorso ? "#eff6ff" : "#fff7ed";
   const numBg = isTorso ? "#3b82f6" : "#f97316";
 
   return (
@@ -1281,6 +1319,86 @@ function ExBtn({ e, i, tp, dn, onTap }) {
         <div style={{ fontSize: 18, color: "#d1d5db", flexShrink: 0 }}>›</div>
       </div>
     </button>
+  );
+}
+
+function RoutineExerciseBlock({ group, tp, dnMap, onTap }) {
+  if (group.type === "single") {
+    const item = group.items[0];
+    return <ExBtn e={item.e} i={item.idx} tp={tp} dn={dnMap[item.e.id]} onTap={() => onTap(item.idx)} />;
+  }
+
+  const isTorso = tp === "torso";
+  const accent = isTorso ? "#3b82f6" : "#f97316";
+  const bg = isTorso ? "#f8fbff" : "#fffaf5";
+
+  return (
+    <div style={{
+      margin: "0 12px 12px",
+      borderRadius: 18,
+      border: `1px solid ${isTorso ? "#bfdbfe" : "#fed7aa"}`,
+      background: bg,
+      boxShadow: isTorso ? "0 2px 8px rgba(59,130,246,0.08)" : "0 2px 8px rgba(249,115,22,0.08)",
+      overflow: "hidden",
+    }}>
+      <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", background: isTorso ? "#eff6ff" : "#fff7ed", borderBottom: `1px solid ${isTorso ? "#dbeafe" : "#ffedd5"}` }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: accent, textTransform: "uppercase", letterSpacing: 0.4 }}>
+          Superserie
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: isTorso ? "#3b82f6" : "#ea580c" }}>
+          Sin descanso entre ejercicios
+        </div>
+      </div>
+      {group.items.map((item, index) => {
+        const e = item.e;
+        const dn = dnMap[e.id];
+        const ok = dn?.length >= e.sets && dn.slice(0, e.sets).every(Boolean);
+        const numBg = ok ? "#22c55e" : accent;
+        return (
+          <button
+            key={e.id}
+            onClick={() => onTap(item.idx)}
+            style={{
+              display: "block",
+              width: "100%",
+              textAlign: "left",
+              background: ok ? "#f0fdf4" : "transparent",
+              border: "none",
+              borderTop: index > 0 ? "1px solid #e5e7eb" : "none",
+              padding: "14px",
+              cursor: "pointer",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                background: numBg,
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 14,
+                fontWeight: 800,
+                flexShrink: 0,
+              }}>
+                {ok ? "✓" : `${item.idx + 1}${e.ss || ""}`}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: ok ? "#166534" : "#1c1c1e" }}>{e.name}</div>
+                <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", background: "#f3f4f6", padding: "2px 8px", borderRadius: 6 }}>{e.sets}×{e.reps}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", background: "#f3f4f6", padding: "2px 8px", borderRadius: 6 }}>⏱ {e.rest}s</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 6, background: "#111827", color: "#fff" }}>SS {e.ss}</span>
+                </div>
+              </div>
+              <div style={{ fontSize: 18, color: "#d1d5db", flexShrink: 0 }}>›</div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
