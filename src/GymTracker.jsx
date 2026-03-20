@@ -381,7 +381,6 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
 
   useEffect(() => {
     const stored = localLoad(REST_TIMER_KEY, null);
-    if (stored?.target) setTarget(stored.target);
     if (stored?.endAt) {
       deadlineRef.current = stored.endAt;
       notifiedRef.current = false;
@@ -411,7 +410,11 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
 
   const go = useCallback((t) => {
     clearTicker();
-    const dur = t || target;
+    const dur = t ?? target;
+    if (!dur || dur <= 0) {
+      reset();
+      return;
+    }
     const endAt = Date.now() + dur * 1000;
     deadlineRef.current = endAt;
     notifiedRef.current = false;
@@ -424,7 +427,7 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
-  }, [clearTicker, ensureAudio, requestWakeLock, saveTimer, syncFromDeadline, target]);
+  }, [clearTicker, ensureAudio, requestWakeLock, reset, saveTimer, syncFromDeadline, target]);
 
   useEffect(() => { if (triggerRef) triggerRef.current = go; }, [go, triggerRef]);
 
@@ -450,6 +453,7 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
 
   const fmt = s => s <= 0 ? "0:00" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const active = running || secs > 0;
+  const quickOptions = Array.from(new Set([40, 45, 50, 60, 90, 120, 150, 180, defaultRest || 90])).sort((a, b) => a - b);
 
   useEffect(() => {
     if (running) return;
@@ -467,7 +471,7 @@ const RestTimer = memo(function RestTimer({ defaultRest, triggerRef }) {
     <div style={{ padding: "0 12px", marginTop: 8 }}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
         <span style={{ fontSize: 12, color: "#9ca3af", padding: "6px 0" }}>Descanso:</span>
-        {[45, 60, 90, 120, 150].map(s => (
+        {quickOptions.map(s => (
           <button key={s} onClick={() => { stop(); setTarget(s); setSecs(s); }} style={chipStyle(s)}>{s}s</button>
         ))}
       </div>
@@ -813,7 +817,7 @@ export default function GymTracker() {
     if (doneRef.current[eid]) {
       doneRef.current[eid][si] = val;
       saveActive("workout");
-      if (val && tRef.current) tRef.current(rest);
+      if (val && rest > 0 && tRef.current) tRef.current(rest);
     }
   }, [rid, saveActive]);
 
