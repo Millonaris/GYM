@@ -70,6 +70,10 @@ const buildExerciseGroups = (items) => {
 
   items.forEach((item) => {
     if (item.e.ss) {
+      if (item.e.ss === "A" && current) {
+        groups.push(current);
+        current = null;
+      }
       if (!current) current = { type: "superset", items: [] };
       current.items.push(item);
       return;
@@ -84,6 +88,14 @@ const buildExerciseGroups = (items) => {
 
   if (current) groups.push(current);
   return groups;
+};
+
+const getExerciseGroupAtIndex = (items, idx) => {
+  const groups = buildExerciseGroups(items.map((e, i) => ({ e, idx: i })));
+  return {
+    groups,
+    groupIndex: groups.findIndex((group) => group.items.some((item) => item.idx === idx)),
+  };
 };
 const EX_DEFAULTS = {
   // Torso B
@@ -788,33 +800,30 @@ export default function GymTracker() {
   }, [rid, saveActive, showDialog, startRoutine]);
 
   // Set handlers — save to storage on every change
-  const onSaveSet = useCallback((si, w, r) => {
+  const onSaveSet = useCallback((eid, si, w, r) => {
     if (!rid) return;
-    const e = allExOf(rid)[eidx];
-    if (dataRef.current[e.id]?.[si]) {
-      dataRef.current[e.id][si] = { weight: w, reps: r };
+    if (dataRef.current[eid]?.[si]) {
+      dataRef.current[eid][si] = { weight: w, reps: r };
       saveActive("workout");
     }
-  }, [rid, eidx, saveActive]);
+  }, [rid, saveActive]);
 
-  const onToggleSet = useCallback((si, val) => {
+  const onToggleSet = useCallback((eid, rest, si, val) => {
     if (!rid) return;
-    const e = allExOf(rid)[eidx];
-    if (doneRef.current[e.id]) {
-      doneRef.current[e.id][si] = val;
+    if (doneRef.current[eid]) {
+      doneRef.current[eid][si] = val;
       saveActive("workout");
-      if (val && tRef.current) tRef.current(e.rest);
+      if (val && tRef.current) tRef.current(rest);
     }
-  }, [rid, eidx, saveActive]);
+  }, [rid, saveActive]);
 
-  const addSet = useCallback(() => {
+  const addSet = useCallback((eid) => {
     if (!rid) return;
-    const e = allExOf(rid)[eidx];
-    dataRef.current[e.id] = [...(dataRef.current[e.id] || []), { weight: 0, reps: 0 }];
-    doneRef.current[e.id] = [...(doneRef.current[e.id] || []), false];
+    dataRef.current[eid] = [...(dataRef.current[eid] || []), { weight: 0, reps: 0 }];
+    doneRef.current[eid] = [...(doneRef.current[eid] || []), false];
     setVer(v => v + 1);
     saveActive("workout");
-  }, [rid, eidx, saveActive]);
+  }, [rid, saveActive]);
 
   // Navigate exercises — save position
   const goExercise = useCallback((newIdx) => {
@@ -1027,48 +1036,69 @@ export default function GymTracker() {
 
   // ═════ WORKOUT ═════
   if (view === "workout" && rid) {
-    const exs = allExOf(rid), e = exs[eidx];
-    const sets = dataRef.current[e.id] || [];
-    const dn = doneRef.current[e.id] || [];
-    const hasPrev = hist.some(w => w.routine === rid && w.exercises?.[e.id]?.sets.some(s => s.done));
+    const exs = allExOf(rid);
+    const { groups: workoutGroups, groupIndex: currentGroupIndex } = getExerciseGroupAtIndex(exs, eidx);
+    const currentGroup = workoutGroups[Math.max(currentGroupIndex, 0)];
+    const groupItems = currentGroup?.items || [{ e: exs[eidx], idx: eidx }];
+    const primaryExercise = groupItems[0].e;
+    const isSupersetView = groupItems.length > 1;
+    const hasPrev = groupItems.some(({ e }) => hist.some(w => w.routine === rid && w.exercises?.[e.id]?.sets.some(s => s.done)));
+    const prevGroup = currentGroupIndex > 0 ? workoutGroups[currentGroupIndex - 1] : null;
+    const nextGroup = currentGroupIndex >= 0 && currentGroupIndex < workoutGroups.length - 1 ? workoutGroups[currentGroupIndex + 1] : null;
+    const timerRest = groupItems[groupItems.length - 1]?.e.rest || primaryExercise?.rest || 90;
 
     return (
       <div style={css.page}>
         <div style={{ ...css.hdr, display: "flex", alignItems: "center", gap: 10 }}>
           <button onClick={goToRoutineView} style={css.back}>‹</button>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</div>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>{eidx + 1} de {exs.length}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {isSupersetView ? `Superserie ${groupItems.map(({ e }) => e.ss).join("/")}` : primaryExercise.name}
+            </div>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>
+              {currentGroupIndex + 1} de {workoutGroups.length}
+            </div>
           </div>
         </div>
         <div style={css.body}>
-          {/* Exercise info */}
-          <div style={{ margin: "10px 12px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: 14, textAlign: "center" }}>
-            <div style={{ fontSize: 14, color: "#4b5563" }}>{e.sets} series × {e.reps} reps · Descanso {e.rest}s</div>
-            {e.notes && <div style={{ fontSize: 13, color: "#f97316", fontWeight: 600, marginTop: 4 }}>💡 {e.notes}</div>}
-            {e.ss && <div style={{ display: "inline-block", marginTop: 6, padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 800, background: "#111827", color: "#fff" }}>Superserie {e.ss}</div>}
-            <div style={{ display: "inline-block", marginTop: 6, padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: e.fallo ? "#dcfce7" : "#fee2e2", color: e.fallo ? "#15803d" : "#dc2626" }}>
-              {e.fallo ? "🟢 Última serie SÍ al fallo" : "🔴 NUNCA al fallo · 1-2 en recámara"}
-            </div>
-          </div>
-          {hasPrev && <div style={{ margin: "0 12px 6px", padding: "8px 12px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, fontSize: 12, color: "#1d4ed8", fontWeight: 600 }}>📋 Cargado de tu sesión anterior</div>}
+          {groupItems.map(({ e, idx }) => {
+            const sets = dataRef.current[e.id] || [];
+            const dn = doneRef.current[e.id] || [];
+            return (
+              <div key={e.id}>
+                <div style={{ margin: "10px 12px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: 14, textAlign: "center" }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "#3b82f6", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                    {isSupersetView ? `Ejercicio ${e.ss}` : "Ejercicio"}
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "#111827", marginTop: 2 }}>{e.name}</div>
+                  <div style={{ fontSize: 14, color: "#4b5563", marginTop: 4 }}>{e.sets} series × {e.reps} reps · Descanso {e.rest}s</div>
+                  {e.notes && <div style={{ fontSize: 13, color: "#f97316", fontWeight: 600, marginTop: 4 }}>💡 {e.notes}</div>}
+                  {e.ss && <div style={{ display: "inline-block", marginTop: 6, padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 800, background: "#111827", color: "#fff" }}>Superserie {e.ss}</div>}
+                  <div style={{ display: "inline-block", marginTop: 6, padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, background: e.fallo ? "#dcfce7" : "#fee2e2", color: e.fallo ? "#15803d" : "#dc2626" }}>
+                    {e.fallo ? "🟢 Última serie SÍ al fallo" : "🔴 NUNCA al fallo · 1-2 en recámara"}
+                  </div>
+                </div>
+                {hasPrev && idx === groupItems[0].idx && <div style={{ margin: "0 12px 6px", padding: "8px 12px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, fontSize: 12, color: "#1d4ed8", fontWeight: 600 }}>📋 Cargado de tu sesión anterior</div>}
+                <div style={{ padding: "0 12px" }}>
+                  {sets.map((s, i) => (
+                    <SetRow key={`${e.id}-${i}-${ver}`} idx={i}
+                      initWeight={s.weight} initReps={s.reps} initDone={dn[i] || false}
+                      onSave={(si, w, r) => onSaveSet(e.id, si, w, r)}
+                      onToggle={(si, val) => onToggleSet(e.id, e.rest, si, val)} />
+                  ))}
+                  <button onClick={() => addSet(e.id)} style={{ width: "100%", padding: 10, borderRadius: 12, border: "2px dashed #d1d5db", background: "none", color: "#9ca3af", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 8 }}>+ Serie extra</button>
+                </div>
+              </div>
+            );
+          })}
 
-          <RestTimer defaultRest={e.rest} triggerRef={tRef} />
-
-          <div style={{ padding: "0 12px" }}>
-            {sets.map((s, i) => (
-              <SetRow key={`${e.id}-${i}-${ver}`} idx={i}
-                initWeight={s.weight} initReps={s.reps} initDone={dn[i] || false}
-                onSave={onSaveSet} onToggle={onToggleSet} />
-            ))}
-            <button onClick={addSet} style={{ width: "100%", padding: 10, borderRadius: 12, border: "2px dashed #d1d5db", background: "none", color: "#9ca3af", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 8 }}>+ Serie extra</button>
-          </div>
+          <RestTimer defaultRest={timerRest} triggerRef={tRef} />
 
           <div style={{ padding: "4px 12px 16px", display: "flex", gap: 8 }}>
-            <button onClick={() => { if (eidx > 0) goExercise(eidx - 1); }} disabled={eidx === 0}
-              style={{ ...css.btn("#f3f4f6", "#1c1c1e"), opacity: eidx === 0 ? 0.3 : 1 }}>← Anterior</button>
-            {eidx < exs.length - 1
-              ? <button onClick={() => goExercise(eidx + 1)} style={css.btn("#3b82f6", "#fff")}>Siguiente →</button>
+            <button onClick={() => { if (prevGroup) goExercise(prevGroup.items[0].idx); }} disabled={!prevGroup}
+              style={{ ...css.btn("#f3f4f6", "#1c1c1e"), opacity: !prevGroup ? 0.3 : 1 }}>← Anterior</button>
+            {nextGroup
+              ? <button onClick={() => goExercise(nextGroup.items[0].idx)} style={css.btn("#3b82f6", "#fff")}>Siguiente →</button>
               : <button onClick={goToRoutineView} style={css.btn("#22c55e", "#fff")}>Ver resumen ✓</button>}
           </div>
         </div>
