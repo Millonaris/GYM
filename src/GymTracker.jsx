@@ -120,6 +120,7 @@ const LS = typeof window !== "undefined" && window.localStorage ? window.localSt
 const UID_KEY = "gym-uid";
 const KEY_TO_FIELD = { "gym-h": "history", "gym-a": "active" };
 const BACKUP_LATEST_KEY = "gym-backup-latest";
+const APP_STATE_KEY = "gym-app-state";
 const REST_TIMER_KEY = "gym-rest-timer";
 const REMOTE_ENABLED = import.meta.env.VITE_REMOTE_SYNC === "1";
 
@@ -251,6 +252,15 @@ function makeBackupPayload(history, active) {
     version: 1,
     createdAt: new Date().toISOString(),
     data: { history, active },
+  };
+}
+
+function makeAppState(history, active) {
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    history,
+    active,
   };
 }
 
@@ -603,11 +613,14 @@ export default function GymTracker() {
   // Load on mount
   useEffect(() => {
     Promise.all([dbLoad("gym-h", []), dbLoad("gym-a", null)]).then(([h, a]) => {
+      const appState = localLoad(APP_STATE_KEY, null);
       const backup = localLoad(BACKUP_LATEST_KEY, null);
+      const sh = Array.isArray(appState?.history) ? appState.history : null;
+      const sa = appState?.active && typeof appState.active === "object" ? appState.active : appState?.active ?? null;
       const bh = Array.isArray(backup?.data?.history) ? backup.data.history : [];
       const ba = backup?.data?.active;
-      const effectiveHist = h?.length ? h : bh;
-      const effectiveActive = a?.rid ? a : (ba?.rid ? ba : null);
+      const effectiveHist = sh ?? (h?.length ? h : bh);
+      const effectiveActive = sa?.rid ? sa : (a?.rid ? a : (ba?.rid ? ba : null));
 
       if (effectiveHist?.length) setHist(effectiveHist);
       if (effectiveActive?.rid && R[effectiveActive.rid]) {
@@ -623,28 +636,6 @@ export default function GymTracker() {
     }).catch(() => { readyRef.current = true; });
   }, []);
 
-  // Save history
-  useEffect(() => { if (readyRef.current) dbSave("gym-h", hist); }, [hist]);
-
-  // Save active — includes current screen and exercise index
-  const saveActive = useCallback((overrideView, overrideEidx) => {
-    if (!rid) {
-      dbSave("gym-a", null);
-      localSave(BACKUP_LATEST_KEY, makeBackupPayload(hist, null));
-      return;
-    }
-    const active = {
-      rid,
-      data: dataRef.current,
-      done: doneRef.current,
-      st: startRef.current,
-      eidx: overrideEidx !== undefined ? overrideEidx : eidx,
-      view: overrideView || view,
-    };
-    dbSave("gym-a", active);
-    localSave(BACKUP_LATEST_KEY, makeBackupPayload(hist, active));
-  }, [rid, eidx, view, hist]);
-
   const getActiveSnapshot = useCallback((override) => {
     if (override !== undefined) return override;
     if (!rid) return null;
@@ -658,11 +649,46 @@ export default function GymTracker() {
     };
   }, [rid, eidx, view]);
 
+  const persistAppState = useCallback((historyOverride, activeOverride) => {
+    const nextHistory = historyOverride ?? hist;
+    const nextActive = activeOverride !== undefined ? activeOverride : getActiveSnapshot();
+    localSave(APP_STATE_KEY, makeAppState(nextHistory, nextActive));
+    localSave(BACKUP_LATEST_KEY, makeBackupPayload(nextHistory, nextActive));
+    dbSave("gym-h", nextHistory);
+    dbSave("gym-a", nextActive);
+  }, [getActiveSnapshot, hist]);
+
   const createBackup = useCallback((historyOverride, activeOverride) => {
     const payload = makeBackupPayload(historyOverride ?? hist, getActiveSnapshot(activeOverride));
     localSave(BACKUP_LATEST_KEY, payload);
     return payload;
   }, [hist, getActiveSnapshot]);
+
+  // Save history
+  useEffect(() => {
+    if (!readyRef.current) return;
+    const active = rid ? getActiveSnapshot() : null;
+    localSave(APP_STATE_KEY, makeAppState(hist, active));
+    localSave(BACKUP_LATEST_KEY, makeBackupPayload(hist, active));
+    dbSave("gym-h", hist);
+  }, [getActiveSnapshot, hist, rid]);
+
+  // Save active — includes current screen and exercise index
+  const saveActive = useCallback((overrideView, overrideEidx) => {
+    if (!rid) {
+      persistAppState(hist, null);
+      return;
+    }
+    const active = {
+      rid,
+      data: dataRef.current,
+      done: doneRef.current,
+      st: startRef.current,
+      eidx: overrideEidx !== undefined ? overrideEidx : eidx,
+      view: overrideView || view,
+    };
+    persistAppState(hist, active);
+  }, [rid, eidx, view, hist, persistAppState]);
 
   const exportBackup = useCallback(() => {
     const payload = createBackup();
@@ -682,7 +708,6 @@ export default function GymTracker() {
       if (!nextHist) throw new Error("invalid_history");
 
       setHist(nextHist);
-      dbSave("gym-h", nextHist);
 
       let restoredActive = null;
       if (nextActive?.rid && R[nextActive.rid]) {
@@ -692,7 +717,6 @@ export default function GymTracker() {
         setEidx(nextActive.eidx || 0);
         startRef.current = nextActive.st || Date.now();
         setView(nextActive.view === "workout" ? "workout" : "routine");
-        dbSave("gym-a", nextActive);
         restoredActive = nextActive;
       } else {
         dataRef.current = {};
@@ -701,9 +725,8 @@ export default function GymTracker() {
         setEidx(0);
         startRef.current = null;
         setView("home");
-        dbSave("gym-a", null);
       }
-      localSave(BACKUP_LATEST_KEY, makeBackupPayload(nextHist, restoredActive));
+      persistAppState(nextHist, restoredActive);
       setVer(v => v + 1);
       showDialog({
         title: "Backup cargado",
@@ -720,7 +743,7 @@ export default function GymTracker() {
         tone: "warning",
       });
     }
-  }, [showDialog]);
+  }, [persistAppState, showDialog]);
 
   // Extra safety: flush active session on app background/close.
   useEffect(() => {
@@ -775,8 +798,8 @@ export default function GymTracker() {
     setVer(v => v + 1);
     setView("routine");
     // Save after state updates via timeout
-    setTimeout(() => dbSave("gym-a", { rid: id, data: d, done: dn, st: Date.now(), eidx: 0, view: "routine" }), 50);
-  }, [hist]);
+    setTimeout(() => persistAppState(hist, { rid: id, data: d, done: dn, st: Date.now(), eidx: 0, view: "routine" }), 50);
+  }, [hist, persistAppState]);
 
   // Open routine
   const openRoutine = useCallback((id) => {
@@ -848,7 +871,7 @@ export default function GymTracker() {
     setTimeout(() => saveActive("workout", idx), 30);
   }, [saveActive]);
 
-  const finish = () => {
+  const finish = useCallback(() => {
     const dur = Math.round((Date.now() - startRef.current) / 60000);
     const exObj = {};
     Object.entries(dataRef.current).forEach(([eid, sets]) => {
@@ -857,14 +880,15 @@ export default function GymTracker() {
     const doneWorkout = { id: Date.now(), date: new Date().toISOString(), routine: rid, exercises: exObj, duration: dur };
     const nextHist = [doneWorkout, ...hist];
     setHist(nextHist);
-    dbSave("gym-h", nextHist);
     const payload = createBackup(nextHist, null);
     downloadBackupFile(payload);
     dataRef.current = {}; doneRef.current = {};
-    setRid(null); dbSave("gym-a", null); setView("home");
-  };
+    setRid(null);
+    persistAppState(nextHist, null);
+    setView("home");
+  }, [createBackup, hist, persistAppState, rid]);
 
-  const discard = () => {
+  const discard = useCallback(() => {
     showDialog({
       title: "Descartar entrenamiento",
       message: "Se perderá la sesión actual no finalizada.",
@@ -875,11 +899,11 @@ export default function GymTracker() {
         dataRef.current = {};
         doneRef.current = {};
         setRid(null);
-        dbSave("gym-a", null);
+        persistAppState(hist, null);
         setView("home");
       },
     });
-  };
+  }, [hist, persistAppState, showDialog]);
 
   const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
   const dayF = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
