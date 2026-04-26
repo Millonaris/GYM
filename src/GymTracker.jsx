@@ -36,7 +36,7 @@ const R = {
     id: "piernaA", name: "Pierna A", sub: "Cuádriceps + Femoral", icon: "🦵", type: "pierna",
     ex: [
       { id: "pa1", name: "Hack squat o prensa", sets: 4, reps: "6-10", rest: 150, notes: "", fallo: false },
-      { id: "pa2", name: "Peso muerto rumano", sets: 3, reps: "6-10", rest: 120, notes: "", fallo: false },
+      { id: "pa2", name: "Hip thrust pesado", sets: 3, reps: "6-10", rest: 120, notes: "", fallo: false },
       { id: "pa3", name: "Curl femoral sentado", sets: 3, reps: "8-12", rest: 60, notes: "", fallo: true },
       { id: "pa4", name: "Extensión de cuádriceps", sets: 2, reps: "12-15", rest: 45, notes: "", fallo: true },
       { id: "pa5", name: "Gemelos", sets: 3, reps: "10-20", rest: 45, notes: "", fallo: true },
