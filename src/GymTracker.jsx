@@ -98,11 +98,14 @@ const EX_DEFAULTS = {};
    STORAGE — safe, with timeouts, error-proof
    ═══════════════════════════════════════════ */
 const LS = typeof window !== "undefined" && window.localStorage ? window.localStorage : null;
+const MISSING = Symbol("gym-missing");
 const UID_KEY = "gym-uid";
 const KEY_TO_FIELD = { "gym-h": "history", "gym-a": "active" };
 const BACKUP_LATEST_KEY = "gym-backup-latest";
 const APP_STATE_KEY = "gym-app-state";
 const REST_TIMER_KEY = "gym-rest-timer";
+const LOCAL_DB_NAME = "gymtracker-local-db";
+const LOCAL_DB_STORE = "kv";
 const REMOTE_ENABLED = import.meta.env.VITE_REMOTE_SYNC === "1";
 
 function getUid() {
@@ -125,6 +128,53 @@ const UID = getUid();
 let remoteStatePromise = null;
 let pendingPatch = {};
 let flushTimer = null;
+let localDbPromise = null;
+
+function openLocalDb() {
+  if (typeof indexedDB === "undefined") return Promise.resolve(null);
+  if (!localDbPromise) {
+    localDbPromise = new Promise((resolve) => {
+      try {
+        const req = indexedDB.open(LOCAL_DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(LOCAL_DB_STORE)) {
+            db.createObjectStore(LOCAL_DB_STORE);
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+  return localDbPromise;
+}
+
+async function idbGet(k) {
+  const db = await openLocalDb();
+  if (!db) return MISSING;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(LOCAL_DB_STORE, "readonly");
+      const req = tx.objectStore(LOCAL_DB_STORE).get(k);
+      req.onsuccess = () => resolve(req.result === undefined ? MISSING : req.result);
+      req.onerror = () => resolve(MISSING);
+    } catch {
+      resolve(MISSING);
+    }
+  });
+}
+
+async function idbSet(k, v) {
+  const db = await openLocalDb();
+  if (!db) return;
+  try {
+    const tx = db.transaction(LOCAL_DB_STORE, "readwrite");
+    tx.objectStore(LOCAL_DB_STORE).put(v, k);
+  } catch {}
+}
 
 function localLoad(k, fb) {
   if (!LS) return fb;
@@ -141,6 +191,20 @@ function localSave(k, v) {
   try {
     LS.setItem(k, JSON.stringify(v));
   } catch {}
+  void idbSet(k, v);
+}
+
+async function localLoadWithMirror(k, fb) {
+  const direct = localLoad(k, MISSING);
+  if (direct !== MISSING) return direct;
+  const mirrored = await idbGet(k);
+  if (mirrored === MISSING) return fb;
+  if (LS) {
+    try {
+      LS.setItem(k, JSON.stringify(mirrored));
+    } catch {}
+  }
+  return mirrored;
 }
 
 async function apiFetch(url, opts = {}, ms = 3500) {
@@ -207,7 +271,7 @@ if (REMOTE_ENABLED && typeof window !== "undefined" && !window.__gymRemoteFlushB
 }
 
 async function dbLoad(k, fb) {
-  const local = localLoad(k, fb);
+  const local = await localLoadWithMirror(k, fb);
   const field = KEY_TO_FIELD[k];
   if (!field || !REMOTE_ENABLED) return local;
   if (!remoteStatePromise) remoteStatePromise = loadRemoteState();
@@ -593,9 +657,12 @@ export default function GymTracker() {
 
   // Load on mount
   useEffect(() => {
-    Promise.all([dbLoad("gym-h", []), dbLoad("gym-a", null)]).then(([h, a]) => {
-      const appState = localLoad(APP_STATE_KEY, null);
-      const backup = localLoad(BACKUP_LATEST_KEY, null);
+    Promise.all([
+      dbLoad("gym-h", []),
+      dbLoad("gym-a", null),
+      localLoadWithMirror(APP_STATE_KEY, null),
+      localLoadWithMirror(BACKUP_LATEST_KEY, null),
+    ]).then(([h, a, appState, backup]) => {
       const sh = Array.isArray(appState?.history) ? appState.history : null;
       const sa = appState?.active && typeof appState.active === "object" ? appState.active : appState?.active ?? null;
       const bh = Array.isArray(backup?.data?.history) ? backup.data.history : [];
